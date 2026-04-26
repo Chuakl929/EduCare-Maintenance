@@ -1,0 +1,8 @@
+{
+  "name": "School Maintenance Reporter",
+  "description": "Web app for logging and managing school maintenance reports with photo capture and status tracking.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
