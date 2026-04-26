@@ -3,10 +3,10 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Camera, Upload, X, CheckCircle, Clock, Trash2, 
   MapPin, Wrench, Calendar, FileText, PlusCircle, 
-  LayoutList, CheckSquare, Pencil, Download
+  LayoutList, CheckSquare, Pencil, Download, Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 
 // Types
 type ReportStatus = 'pending' | 'completed';
@@ -291,11 +291,12 @@ interface ReportListProps {
   onEdit?: (report: Report) => void;
   onComplete?: (report: Report) => void;
   onExport?: (report: Report) => void;
+  onView?: (report: Report) => void;
   emptyMessage: string;
   key?: string;
 }
 
-function ReportList({ reports, onUpdateStatus, onDelete, onEdit, onComplete, onExport, emptyMessage }: ReportListProps) {
+function ReportList({ reports, onUpdateStatus, onDelete, onEdit, onComplete, onExport, onView, emptyMessage }: ReportListProps) {
   if (reports.length === 0) {
     return (
       <motion.div 
@@ -324,9 +325,9 @@ function ReportList({ reports, onUpdateStatus, onDelete, onEdit, onComplete, onE
             {(() => {
               const displayPhoto = (report.status === 'completed' && report.afterPhotos && report.afterPhotos.length > 0) 
                  ? report.afterPhotos[0] 
-                 : (report.photos.length > 0 ? report.photos[0] : null);
-              const extraPhotos = (report.photos.length + (report.afterPhotos?.length || 0)) - 1;
-              const photoLabel = (report.status === 'completed' && report.afterPhotos && report.afterPhotos.length > 0) ? 'After' : (report.photos.length > 0 ? 'Before' : null);
+                 : (report.photos?.length > 0 ? report.photos[0] : null);
+              const extraPhotos = ((report.photos?.length || 0) + (report.afterPhotos?.length || 0)) - 1;
+              const photoLabel = (report.status === 'completed' && report.afterPhotos && report.afterPhotos.length > 0) ? 'After' : (report.photos?.length > 0 ? 'Before' : null);
 
               if (displayPhoto) {
                 return (
@@ -415,14 +416,14 @@ function ReportList({ reports, onUpdateStatus, onDelete, onEdit, onComplete, onE
                       <span className="text-slate-300">|</span>
                     </>
                   )}
-                  {report.status === 'completed' && onComplete && (
+                  {report.status === 'completed' && onView && (
                     <>
                       <button
-                        onClick={() => onComplete(report)}
-                        className="flex items-center text-slate-400 hover:text-emerald-600 transition-colors"
+                        onClick={() => onView(report)}
+                        className="flex items-center text-slate-400 hover:text-indigo-600 transition-colors"
                       >
-                        <Pencil className="w-3 h-3 sm:mr-1" />
-                        <span className="hidden sm:inline">Update Log</span>
+                        <Eye className="w-3 h-3 sm:mr-1" />
+                        <span className="hidden sm:inline">View Report</span>
                       </button>
                       <span className="text-slate-300">|</span>
                     </>
@@ -458,10 +459,14 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'submit' | 'pending' | 'completed'>('submit');
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
   const [completingReportId, setCompletingReportId] = useState<string | null>(null);
+  const [viewingReportId, setViewingReportId] = useState<string | null>(null);
   const [reports, setReports] = useState<Report[]>(() => {
     try {
       const saved = localStorage.getItem('school-reports');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed : [];
+      }
     } catch (e) {
       console.error('Failed to load reports', e);
     }
@@ -469,7 +474,11 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('school-reports', JSON.stringify(reports));
+    try {
+      localStorage.setItem('school-reports', JSON.stringify(reports));
+    } catch (e) {
+      console.error('Failed to save reports to local storage', e);
+    }
   }, [reports]);
 
   const sortedReports = [...reports].sort((a, b) => b.createdAt - a.createdAt);
@@ -478,6 +487,7 @@ export default function App() {
   
   const editingReport = editingReportId ? reports.find(r => r.id === editingReportId) : null;
   const completingReport = completingReportId ? reports.find(r => r.id === completingReportId) : null;
+  const viewingReport = viewingReportId ? reports.find(r => r.id === viewingReportId) : null;
 
   async function exportReportToPDF(report: Report) {
     const doc = new jsPDF();
@@ -532,7 +542,7 @@ export default function App() {
     doc.setFont('helvetica', 'bold');
     doc.text('Issue Description:', leftColX, descY);
     doc.setFont('helvetica', 'normal');
-    const splitDescription = doc.splitTextToSize(report.description, 170);
+    const splitDescription = doc.splitTextToSize(report.description || '', 170);
     doc.text(splitDescription, leftColX, descY + 6);
     
     let currentY = descY + 6 + (splitDescription.length * 6);
@@ -543,7 +553,7 @@ export default function App() {
       doc.setFont('helvetica', 'bold');
       doc.text('Completion Remarks:', leftColX, currentY);
       doc.setFont('helvetica', 'normal');
-      const splitRemarks = doc.splitTextToSize(report.remarks, 170);
+      const splitRemarks = doc.splitTextToSize(report.remarks || '', 170);
       doc.text(splitRemarks, leftColX, currentY + 6);
       currentY += 6 + (splitRemarks.length * 6);
     }
@@ -599,7 +609,7 @@ export default function App() {
       return cy;
     };
     
-    currentY = await addPhotosToPDF(report.photos, 'Before (Reported Damage)', currentY);
+    currentY = await addPhotosToPDF(report.photos || [], 'Before (Reported Damage)', currentY);
     currentY = await addPhotosToPDF(report.afterPhotos || [], 'After (Repaired)', currentY);
 
     // Save
@@ -610,7 +620,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-900 pb-12">
        <Header />
        <main className="flex-1 w-full max-w-[1200px] mx-auto p-4 sm:p-6 flex flex-col gap-6">
-         {!editingReport && !completingReport && (
+         {!editingReport && !completingReport && !viewingReport && (
            <Tabs 
              activeTab={activeTab} 
              onTabChange={setActiveTab} 
@@ -630,6 +640,12 @@ export default function App() {
                  }}
                  onCancel={() => setCompletingReportId(null)}
                />
+             ) : viewingReport ? (
+               <ViewReport
+                 key="view"
+                 report={viewingReport}
+                 onClose={() => setViewingReportId(null)}
+               />
              ) : editingReport ? (
                <ReportForm 
                  key="edit"
@@ -641,47 +657,42 @@ export default function App() {
                  }}
                  onCancel={() => setEditingReportId(null)}
                />
+             ) : activeTab === 'submit' ? (
+               <ReportForm 
+                 onSubmit={(data) => { 
+                   const newReport: Report = {
+                     id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
+                     ...data,
+                     status: 'pending',
+                     createdAt: Date.now()
+                   };
+                   setReports([newReport, ...reports]); 
+                   setActiveTab('pending'); 
+                 }} 
+                 key="submit" 
+               />
+             ) : activeTab === 'pending' ? (
+               <ReportList 
+                 reports={sortedReports.filter(r => r.status === 'pending')} 
+                 onUpdateStatus={updateStatus} 
+                 onDelete={deleteReport} 
+                 onEdit={(report) => setEditingReportId(report.id)}
+                 onComplete={(report) => setCompletingReportId(report.id)}
+                 emptyMessage="Great job! There are no pending maintenance reports." 
+                 key="pending" 
+               />
              ) : (
-               <>
-                 {activeTab === 'submit' && (
-                   <ReportForm 
-                     onSubmit={(data) => { 
-                       const newReport: Report = {
-                         id: crypto.randomUUID(),
-                         ...data,
-                         status: 'pending',
-                         createdAt: Date.now()
-                       };
-                       setReports([newReport, ...reports]); 
-                       setActiveTab('pending'); 
-                     }} 
-                     key="submit" 
-                   />
-                 )}
-                 {activeTab === 'pending' && (
-                   <ReportList 
-                     reports={sortedReports.filter(r => r.status === 'pending')} 
-                     onUpdateStatus={updateStatus} 
-                     onDelete={deleteReport} 
-                     onEdit={(report) => setEditingReportId(report.id)}
-                     onComplete={(report) => setCompletingReportId(report.id)}
-                     emptyMessage="Great job! There are no pending maintenance reports." 
-                     key="pending" 
-                   />
-                 )}
-                 {activeTab === 'completed' && (
-                   <ReportList 
-                     reports={sortedReports.filter(r => r.status === 'completed')} 
-                     onUpdateStatus={updateStatus} 
-                     onDelete={deleteReport} 
-                     onEdit={(report) => setEditingReportId(report.id)}
-                     onComplete={(report) => setCompletingReportId(report.id)}
-                     onExport={exportReportToPDF}
-                     emptyMessage="No completed reports yet." 
-                     key="completed" 
-                   />
-                 )}
-               </>
+               <ReportList 
+                 reports={sortedReports.filter(r => r.status === 'completed')} 
+                 onUpdateStatus={updateStatus} 
+                 onDelete={deleteReport} 
+                 onEdit={(report) => setEditingReportId(report.id)}
+                 onComplete={(report) => setCompletingReportId(report.id)}
+                 onExport={exportReportToPDF}
+                 onView={(report) => setViewingReportId(report.id)}
+                 emptyMessage="No completed reports yet." 
+                 key="completed" 
+               />
              )}
            </AnimatePresence>
          </div>
@@ -700,6 +711,93 @@ export default function App() {
   function deleteReport(id: string) {
     setReports(reports.filter(r => r.id !== id));
   }
+}
+
+function ViewReport({ report, onClose }: { report: Report; onClose: () => void; key?: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200"
+    >
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-bold text-slate-800">Report Details</h2>
+        <button onClick={onClose} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-500 transition-colors">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div className="space-y-6">
+        {/* Original Report */}
+        <div>
+          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Original Report</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Date Reported</p>
+              <p className="font-medium text-slate-800">{new Date(report.date).toLocaleDateString()}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Location</p>
+              <p className="font-medium text-slate-800">{report.location}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Damage Type</p>
+              <p className="font-medium text-slate-800">{report.damageType}</p>
+            </div>
+            <div className="sm:col-span-2">
+              <p className="text-xs text-slate-400 mb-1">Description</p>
+              <p className="text-slate-700 whitespace-pre-wrap text-sm">{report.description}</p>
+            </div>
+          </div>
+          
+          {report.photos && report.photos.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs text-slate-400 mb-2">Before Photos</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {report.photos.map((photo, i) => (
+                  <div key={'p'+i} className="aspect-square bg-slate-200 rounded-lg overflow-hidden border border-slate-200">
+                    <img src={photo} alt={`Before ${i+1}`} className="w-full h-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Completion Details */}
+        {report.status === 'completed' && (
+          <div className="pt-6 border-t border-slate-100">
+            <h3 className="text-sm font-semibold text-emerald-600 uppercase tracking-wider mb-3">Completion Details</h3>
+            <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+               <div className="mb-4">
+                <p className="text-xs text-emerald-600/70 mb-1">Completion Date</p>
+                <p className="font-medium text-emerald-900">{report.completionDate ? new Date(report.completionDate).toLocaleDateString() : '-'}</p>
+               </div>
+               {report.remarks && (
+                 <div className="mb-4">
+                  <p className="text-xs text-emerald-600/70 mb-1">Remarks</p>
+                  <p className="text-emerald-800 whitespace-pre-wrap text-sm">{report.remarks}</p>
+                 </div>
+               )}
+               {report.afterPhotos && report.afterPhotos.length > 0 && (
+                <div>
+                  <p className="text-xs text-emerald-600/70 mb-2">After Photos</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {report.afterPhotos.map((photo, i) => (
+                      <div key={'ap'+i} className="aspect-square bg-emerald-100 rounded-lg overflow-hidden border border-emerald-200">
+                        <img src={photo} alt={`After ${i+1}`} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
 }
 
 function CompletionForm({ 
